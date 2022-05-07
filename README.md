@@ -115,7 +115,7 @@ The character table  reduces to these characters:
 |     58 |               6 |            y |
 |     59 |               7 |            z |
 |     60 |               8 |            { |
-|     61 |               9 |            | |
+|     61 |               9 |           \| |
 |     62 |               + |            } |
 |     63 |               / |            ~ |
 
