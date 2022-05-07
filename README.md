@@ -32,8 +32,8 @@ in terminal-wg while discussing some fundamental aspects of new terminal sequenc
 _base64-sixel_ is a 6-bit encoding compatible to _base64_ as defined by
 [RFC4648 §4](https://datatracker.ietf.org/doc/html/rfc4648#section-4).
 
-The charmap is a mapping of the contiguous ASCII positions 63 - 126 to the index value.
-Any character outside this range is invalid and shall be treated as error stopping further decoding.
+The charmap is a mapping of the contiguous ASCII positions 63 - 126 to the index value 0 - 63.
+Any character outside this range is invalid and shall be treated as error, stopping further decoding.
 In particular this means:
 - separator characters are not supported
 - a padding character is not allowed (optional in RFC4648)
