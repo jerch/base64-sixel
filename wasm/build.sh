@@ -45,6 +45,7 @@ source $EMSCRIPTEN_PATH
 #-s INITIAL_MEMORY=$INITIAL_MEMORY \
 #-s MAXIMUM_MEMORY=$INITIAL_MEMORY \
 #-s EXPORTED_FUNCTIONS='[
+#  "_transcode",
 #  "_decode",
 #  "_get_chunk_address",
 #  "_get_target_address"

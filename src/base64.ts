@@ -40,8 +40,11 @@ export class Base64Wasm {
       throw new Error('data too big');
     }
     Base64Wasm._chunk.set(data.subarray(start, end));
-    const decodedLength = Base64Wasm._wasm.decode(end - start);
-    return Base64Wasm._target.subarray(0, decodedLength);
+    const length = Base64Wasm._wasm.decode(end - start);
+    if (length < 0) {
+      throw new Error(`wrong byte at position [${~length}]`);
+    }
+    return Base64Wasm._target.subarray(0, length);
   }
 
   static transcode(data: Uint8Array, start: number = 0, end: number = data.length): Uint8Array {
@@ -103,6 +106,13 @@ function toBytes(s: string): Uint8Array {
     bytes[i] = s.charCodeAt(i) & 0xFF;
   }
   return bytes;
+}
+function toString(bytes: Uint8Array): string {
+  let result = '';
+  for (let i = 0; i < bytes.length; ++i) {
+    result += String.fromCharCode(bytes[i]);
+  }
+  return result;
 }
 
 function dec(s: string) {
@@ -168,7 +178,19 @@ for (let i = 0; i < input.length; ++i) data[i] = input.charCodeAt(i);
 const ROUNDS = 1000;
 const start = Date.now();
 for (let i = 0; i < ROUNDS; ++i) {
-  Base64Wasm.transcode(data);
+  Base64Wasm.decode(data);
 }
 const duration = Date.now() - start;
 console.log((input.length * ROUNDS / duration * 1000 / 1024 / 1024).toFixed(0), 'MB/s');
+
+
+// error tests
+const errInput = '????????';
+console.log(Base64Wasm.decode(toBytes(errInput)));
+
+
+console.log([
+  toString(Base64Wasm.decode(Base64Wasm.transcode(toBytes(Buffer.from('Hello World1234567890123').toString('base64')))))
+]);
+
+//console.log(Base64Wasm.decode(toBytes('????????#???????')));

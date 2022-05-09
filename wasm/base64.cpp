@@ -27,7 +27,7 @@
 #endif
 
 static unsigned char chunk[CHUNK_SIZE] __attribute__((aligned(16)));
-static unsigned char eod;
+static unsigned int eod;
 static unsigned char target[CHUNK_SIZE] __attribute__((aligned(16)));
 
 
@@ -69,6 +69,8 @@ static char STAND2SIXEL[] = {
  * In case of an invalid input character the 2-complement of its
  * position in input data is returned as error code.
  * 
+ * TODO: Get this faster with more clever lookup handling...
+ * 
  * @param length  Amount of characters loaded in chunk to be transcoded.
  * @return int    Amount of characters written to target, or error code.
  */
@@ -94,7 +96,7 @@ int transcode(int length) {
         return dst - target;
       }
       unsigned char v = *(c - 1);
-      // exit early on padding char =
+      // exit early on first padding char =
       if (v == 61) {
         return dst - target;
       }
@@ -111,23 +113,6 @@ int transcode(int length) {
 int encode(int length) {
   // TODO: SIMD and scalar version
   return 0;
-}
-
-
-int decode_(int length) {
-  unsigned char *t = target;
-  unsigned int v;
-  for (int i = 0; i < length; i += 4) {
-    unsigned char b0 = chunk[i + 0] - 63;
-    unsigned char b1 = chunk[i + 1] - 63;
-    unsigned char b2 = chunk[i + 2] - 63;
-    unsigned char b3 = chunk[i + 3] - 63;
-    // TODO: error detection goes here...
-    *t++ = (b1 >> 4) | (b0 << 2);
-    *t++ = (b2 >> 2) | (b1 << 4);
-    *t++ = b3 | (b2 << 6);
-  }
-  return t - target;
 }
 
 
@@ -152,18 +137,62 @@ FOR j := 0 to 7
 ENDFOR
 */
 
+
+//#define __SSSE3__
+#ifdef __SSSE3__
+
 #include <immintrin.h>
-#define packed_byte(x) _mm_set1_epi8(x)
-#define packed_dword(x) _mm_set1_epi32(x)
-#define masked(x, mask) _mm_and_si128(x, _mm_set1_epi32(mask))
+
+static inline int _decode_tail(unsigned char *c, unsigned char *t, int length) {
+  unsigned char temp0, temp1, temp2, temp3;
+  unsigned char *c_end = c + length;
+  *c_end = 0;
+  while (c < c_end) {
+    if (
+      (temp0 = *c++ - 63) < 64 &&
+      (temp1 = *c++ - 63) < 64 &&
+      (temp2 = *c++ - 63) < 64 &&
+      (temp3 = *c++ - 63) < 64
+    ) {
+      *t++ = temp0 << 2 | temp1 >> 4;
+      *t++ = temp1 << 4 | temp2 >> 2;
+      *t++ = temp2 << 6 | temp3;
+    } else {
+      if (c - 1 >= c_end) {
+        if (temp0 < 64) {
+          // NOTE: only one byte < 64 at the tail is treated as invalid and
+          // returns error as negative data length (last char + 1)
+          // this edge case can be grasped by caller by doing a length check
+          // (not sure yet, whether to ignore or raise on that)
+          // FIXME: check what RFC says about it
+          if (temp1 < 64) {
+            *t++ = temp0 << 2 | temp1 >> 4;
+            if (temp2 < 64) {
+              *t++ = temp1 << 4 | temp2 >> 2;
+            }
+            return t - target;
+          }
+        }
+      }
+      return -(c - chunk);
+    }
+  }
+  return t - target;
+}
 
 int decode(int length) {
   unsigned char *t = target;
-  for (int i = 0; i < length; i += 16) {
-    __m128i v1 = _mm_load_si128((__m128i*)(chunk+i));
+  __m128i *inp = (__m128i*) chunk;
+  __m128i error = _mm_setzero_si128();
+  int l = length >> 4;
+  while (l--) {
+    __m128i v1 = _mm_load_si128(inp++);
     // subtract 63
-    __m128i v2 = _mm_sub_epi8(v1, _mm_set1_epi8(63));
-    // TODO: error detection goes here...
+    __m128i v2 = _mm_add_epi8(v1, _mm_set1_epi8(-63));
+    // error detection: just aggregate, eval afterwards
+    __m128i e1 = _mm_and_si128(v2, _mm_set1_epi8(0xC0));
+    error = _mm_or_si128(error, e1);
+
     // merge 4x6 bits to 3x8
     __m128i v3 = _mm_maddubs_epi16(v2, _mm_set1_epi32(0x01400140));
     __m128i r1 = _mm_madd_epi16(v3, _mm_set1_epi32(0x00011000));
@@ -177,5 +206,62 @@ int decode(int length) {
     _mm_storeu_si128((__m128i *) t, r2);
     t += 12;
   }
+  // TODO: cleanup lines below
+  // postponed error handling: check for highest 2 bits on error
+  if (_mm_movemask_epi8(error) || _mm_movemask_epi8(_mm_slli_epi64(error, 1))) {
+    // basically the whole data is broken here,
+    // thus we redo decoding in scalar to find error position
+    // while this penalizes bad cases, good data can run at full speed
+    return _decode_tail(chunk, target, length);
+  }
+  if (((unsigned char *) inp) < chunk + length) {
+    int processed = ((length >> 4) - (l+1)) << 4;
+    return _decode_tail((unsigned char *) inp, t, length - processed);
+  }
   return t - target;
 }
+
+#else
+
+// TODO: make faster scalar lookup version
+int decode(int length) {
+  unsigned char *t = target;
+  unsigned char temp0, temp1, temp2, temp3;
+  unsigned char *c = chunk;
+  unsigned char *c_end = c + length;
+  *c_end = 0;
+  while (c < c_end) {
+    if (
+      (temp0 = *c++ - 63) < 64 &&
+      (temp1 = *c++ - 63) < 64 &&
+      (temp2 = *c++ - 63) < 64 &&
+      (temp3 = *c++ - 63) < 64
+    ) {
+      *t++ = temp0 << 2 | temp1 >> 4;
+      *t++ = temp1 << 4 | temp2 >> 2;
+      *t++ = temp2 << 6 | temp3;
+    } else {
+      if (c - 1 >= c_end) {
+        if (temp0 < 64) {
+          // NOTE: only one byte < 64 at the tail is treated as invalid and
+          // returns error as negative data length (last char + 1)
+          // this edge case can be grasped by caller by doing a length check
+          // (not sure yet, whether to ignore or raise on that)
+          // FIXME: check what RFC says about it
+          if (temp1 < 64) {
+            *t++ = temp0 << 2 | temp1 >> 4;
+            if (temp2 < 64) {
+              *t++ = temp1 << 4 | temp2 >> 2;
+            }
+            return t - target;
+          }
+        }
+      }
+      return -(c - chunk);
+    }
+  }
+  return t - target;
+}
+
+
+#endif
