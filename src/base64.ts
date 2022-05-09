@@ -171,17 +171,21 @@ dec2('?O??????????????');
 
 
 // speed test
-const input = 'AAAAAAAAAAAAAAAA'.repeat(1024*4);
-const data = new Uint8Array(input.length);
-for (let i = 0; i < input.length; ++i) data[i] = input.charCodeAt(i);
-
+const input1 = 'AAAAAAAAAAAAAAAA'.repeat(1024*4);
+const input2 = 'BBBBBBBBBBBBBBBB'.repeat(1024*4);
+const data1 = new Uint8Array(input1.length);
+const data2 = new Uint8Array(input2.length);
+for (let i = 0; i < input1.length; ++i) {
+  data1[i] = input1.charCodeAt(i);
+  data2[i] = input2.charCodeAt(i);
+}
 const ROUNDS = 1000;
 const start = Date.now();
 for (let i = 0; i < ROUNDS; ++i) {
-  Base64Wasm.decode(data);
+  Base64Wasm.decode(i%2 ? data1 : data2);
 }
 const duration = Date.now() - start;
-console.log((input.length * ROUNDS / duration * 1000 / 1024 / 1024).toFixed(0), 'MB/s');
+console.log((input1.length * ROUNDS / duration * 1000 / 1024 / 1024).toFixed(0), 'MB/s');
 
 
 // error tests
@@ -193,4 +197,4 @@ console.log([
   toString(Base64Wasm.decode(Base64Wasm.transcode(toBytes(Buffer.from('Hello World1234567890123').toString('base64')))))
 ]);
 
-//console.log(Base64Wasm.decode(toBytes('????????#???????')));
+//console.log(Base64Wasm.decode(toBytes('????????????????QQ')));

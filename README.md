@@ -7,24 +7,24 @@ Base64 variant using the SIXEL characters.
 
 While _base64_ with its default charmap is an ubiquitous standard and used for most transport needs
 of arbitrary bytes in textual environments, it is quite costly to calculate. This mainly results from
-the shape of its charmap, which is hard to process without dedicated lookup tables or CPU-exhausting conditions.
-While there has been some success to speed up _base64_ decoding on beefy CPUs
-(see https://arxiv.org/abs/1910.05109), it is surprisingly hard to run fast for a quite simple looking specification.
+the shape of its charmap and its endianess, which is hard to process without dedicated lookup tables or extensive shifts.
+There has been some success to speed up _base64_ decoding on beefy LE CPUs (see https://arxiv.org/abs/1910.05109),
+still decoding keeps surprisingly hard to run fast for a quite simple looking specification.
 
 On the other hand environments like terminals have dealt with the same underlying issue,
-how to transport full bytes without collision with terminal sequences, for a very long time.
+how to transport byte data without collision with terminal sequences, for a very long time.
 
 The SIXEL graphics sequence from the 80s contains a 6-bit data encoding, that can be used safely in terminals
 without side effects. The advantage of its characters is a direct contiguous mapping into ASCII,
 from position 63 to position 126.
 
-This proposal merges the bit encoding pattern used by _base64_ with the charmap of SIXEL.
-It shall help to solve performance issues with base64 while staying usable in terminals for binary transports.
-While it most likely will work in many other environments and transports as well, the compatibility is focused
-on the terminal interface.
+DEC already used the term "sixel-encoded" in their STD 070 manual, but did not specify a full 8 to 6 bit encoding pattern
+to our knowledge. To fill this gap, this proposal merges the bit encoding pattern used by _base64_ with the charmap of SIXEL.
+It shall help to reduce performance issues with base64 while staying usable in terminals for binary transports.
+It most likely will work in other environments as well, yet compatibility is focused on the terminal interface.
 
 The idea for a dedicated 6-bit encoding based on SIXEL characters was originally brought up by @j4james
-in terminal-wg while discussing some fundamental aspects of new terminal sequences (needs link...).
+in terminal-wg (needs link...).
 
 
 ### Description
@@ -130,24 +130,24 @@ Some notes on example implementations contained in the repo TODO...
 
 ### Performance
 
-Some early number for decoding:
+Some early numbers for decoding:
 
 - wasm-scalar ~1.2 GB/s
 - wasm-SIMD ~7 GB/s
 - native only tested with early cmdline interface:
 ```bash
 # SIMD
-$> ./base64 data | pv > /dev/null
- 715MiB 0:00:00 [2,25GiB/s] [<=>                                               ]
+$> pv -a data | ./base64 > /dev/null
+[4,28GiB/s]
 # scalar
-$> ./base64 data | pv > /dev/null
- 715MiB 0:00:01 [ 692MiB/s] [ <=>                                              ]
+$> pv -a data | ./base64 > /dev/null
+[1,05GiB/s]
 # compared to base64 from system
-$> base64 -d data | pv > /dev/null
- 715MiB 0:00:02 [ 278MiB/s] [  <=>                                             ]
-# compared to cat (yes this is an old machine)
-$> cat data | pv > /dev/null                          
- 953MiB 0:00:00 [2,56GiB/s] [<=>                                               ]
+$> pv -a data | base64 -d > /dev/null
+[ 401MiB/s]
+# compared to cat
+$> pv -a data | cat > /dev/null
+[6,46GiB/s]
 ```
 
 

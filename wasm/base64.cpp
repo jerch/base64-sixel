@@ -215,7 +215,7 @@ int decode(int length) {
     return _decode_tail(chunk, target, length);
   }
   if (((unsigned char *) inp) < chunk + length) {
-    int processed = ((length >> 4) - (l+1)) << 4;
+    int processed = (length >> 4) << 4;
     return _decode_tail((unsigned char *) inp, t, length - processed);
   }
   return t - target;
