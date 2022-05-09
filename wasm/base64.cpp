@@ -207,8 +207,8 @@ int decode(int length) {
     t += 12;
   }
   // TODO: cleanup lines below
-  // postponed error handling: check for highest 2 bits on error
-  if (_mm_movemask_epi8(error) || _mm_movemask_epi8(_mm_slli_epi64(error, 1))) {
+  // postponed error handling: all lanes in error should be zero
+  if (_mm_movemask_epi8(_mm_cmpeq_epi8(error, _mm_setzero_si128())) != 0xFFFF) {
     // basically the whole data is broken here,
     // thus we redo decoding in scalar to find error position
     // while this penalizes bad cases, good data can run at full speed
