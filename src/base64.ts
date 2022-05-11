@@ -69,46 +69,6 @@ export class Base64Wasm {
     }
     return Base64Wasm._target.subarray(0, length);
   }
-
-  // FIXME: quickly hacked in TS for now, needs wasm impl
-  static encode__(data: Uint8Array, start: number = 0, end: number = data.length): Uint8Array {
-    let length = end - start;
-    const target = new Uint8Array(Math.ceil(length / 3) * 4);
-    if (!length) {
-      return target;
-    }
-    const padding = length % 3;
-    if (padding) {
-      length -= padding;
-    }
-    let j = 0;
-    for (let i = 0; i < length; i += 3) {
-      // load 3x 8 bit values
-      let accu = data[i] << 16 | data[i + 1] << 8 | data[i + 2];
-
-      // write 4x 6 bit values
-      target[j] = (accu >> 18) + 63;
-      target[j + 1] = ((accu >> 12) & 0x3F) + 63;
-      target[j + 2] = ((accu >> 6) & 0x3F) + 63;
-      target[j + 3] = (accu & 0x3F) + 63;
-      j += 4;
-    }
-    if (padding) {
-      if (padding === 2) {
-        let accu = data[length] << 8 | data[length + 1];
-        accu <<= 2;
-        target[j++] = (accu >> 12) + 63;
-        target[j++] = ((accu >> 6) & 0x3F) + 63;
-        target[j++] = (accu & 0x3F) + 63;
-      } else {
-        let accu = data[length];
-        accu <<= 4;
-        target[j++] = (accu >> 6) + 63;
-        target[j++] = (accu & 0x3F) + 63;
-      }
-    }
-    return target.subarray(0, j);
-  }
 }
 
 function toBytes(s: string): Uint8Array {
@@ -126,124 +86,44 @@ function toString(bytes: Uint8Array): string {
   return result;
 }
 
-function dec(s: string) {
-  //console.log(Array.from(Base64Wasm.decode(toBytes(s))).map(el => el.toString(2).padStart(8, '0')).join(','));
-  console.log(s, Base64Wasm.decode(toBytes(s)).join(','));
-}
-function dec2(s: string) {
-  const ALs = '?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
-  const AL = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  let b64 = '';
-  for (let i = 0; i < s.length; ++i) {
-    b64 += AL[ALs.indexOf(s[i])];
+function playground() {
+
+  // speed test
+  const input1 = 'AAAAAAAAAAAAAAAA'.repeat(1024*4);
+  const input2 = 'BBBBBBBBBBBBBBBB'.repeat(1024*4);
+  const data1 = new Uint8Array(input1.length);
+  const data2 = new Uint8Array(input2.length);
+  for (let i = 0; i < input1.length; ++i) {
+    data1[i] = input1.charCodeAt(i);
+    data2[i] = input2.charCodeAt(i);
   }
-  console.log(b64, Array.from(Buffer.from(b64, 'base64')).join(','));
+  const ROUNDS = 10000;
+  const start = Date.now();
+  let l = 0;
+  for (let i = 0; i < ROUNDS; ++i) {
+    l+= Base64Wasm.decode(i%2 ? data1 : data2).length;
+    //const d = Base64Wasm.transcode(i%2 ? data1 : data2).slice(0);
+    //l+= Base64Wasm.decode(Base64Wasm.transcode(i%2 ? data1 : data2)).length;
+  }
+  const duration = Date.now() - start;
+  console.log((input1.length * ROUNDS / duration * 1000 / 1024 / 1024).toFixed(0), 'MB/s', l, duration);
+
+
+  console.log('encoding:');
+  const some_data = new Uint8Array([1,2]);
+  console.log([toString(Base64Wasm.encode(some_data))]);
+  console.log([Buffer.from(some_data).toString('base64')]);
+  console.log([toString(Base64Wasm.transcode(toBytes(Buffer.from(some_data).toString('base64'))))]);
+
+
+  const encode_input = new Uint8Array(49152);
+  const s = Date.now();
+  l = 0;
+  for (let i = 0; i < ROUNDS; ++i) {
+    l += Base64Wasm.encode(encode_input).length;
+  }
+  const dur = Date.now() - s;
+  console.log((encode_input.length * ROUNDS / dur * 1000 / 1024 / 1024).toFixed(0), 'MB/s', l, dur);
+
 }
-
-// '@ACGO_' --> 1 2 4 8 16 32
-// '?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~'
-
-console.log('base64-sixel');
-dec('@???????????????');
-dec('?C??????????????');
-dec('??O?????????????');
-dec('????@???????????');
-dec('?????C??????????');
-dec('??????O?????????');
-dec('????????@???????');
-dec('?????????C??????');
-dec('??????????O?????');
-dec('????????????@???');
-dec('?????????????C??');
-dec('??????????????O?');
-dec('~~~~~~~~~~~~~~~~');
-dec('??????????????x~');
-
-console.log('base64');
-dec2('@???????????????');
-dec2('?C??????????????');
-dec2('??O?????????????');
-dec2('????@???????????');
-dec2('?????C??????????');
-dec2('??????O?????????');
-dec2('????????@???????');
-dec2('?????????C??????');
-dec2('??????????O?????');
-dec2('????????????@???');
-dec2('?????????????C??');
-dec2('??????????????O?');
-dec2('~~~~~~~~~~~~~~~~');
-dec2('??????????????x~');
-
-
-console.log('############');
-dec ('?O??????????????');
-dec2('?O??????????????');
-
-
-// speed test
-const input1 = 'AAAAAAAAAAAAAAAA'.repeat(1024*4);
-const input2 = 'BBBBBBBBBBBBBBBB'.repeat(1024*4);
-const data1 = new Uint8Array(input1.length);
-const data2 = new Uint8Array(input2.length);
-for (let i = 0; i < input1.length; ++i) {
-  data1[i] = input1.charCodeAt(i);
-  data2[i] = input2.charCodeAt(i);
-}
-const ROUNDS = 10000;
-const start = Date.now();
-let l = 0;
-for (let i = 0; i < ROUNDS; ++i) {
-  l+= Base64Wasm.decode(i%2 ? data1 : data2).length;
-  //const d = Base64Wasm.transcode(i%2 ? data1 : data2).slice(0);
-  //l+= Base64Wasm.decode(Base64Wasm.transcode(i%2 ? data1 : data2)).length;
-}
-const duration = Date.now() - start;
-console.log((input1.length * ROUNDS / duration * 1000 / 1024 / 1024).toFixed(0), 'MB/s', l, duration);
-
-
-// error tests
-const errInput = '????????';
-console.log(Base64Wasm.decode(toBytes(errInput)));
-
-
-console.log([
-  toString(Base64Wasm.decode(Base64Wasm.transcode(toBytes(Buffer.from('Hello World1234567890123').toString('base64')))))
-]);
-
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
-//console.log([toString(Base64Wasm.transcode(toBytes('A#AAA\n\rAAAAAAAAAAAAAAAAAAAAA B')))]);
-
-//console.log([toString(Base64Wasm.decode(toBytes('?')))]);
-
-//console.log('####');
-//console.log([toString(Base64Wasm.decode(toBytes('?????')))]);
-//console.log('####');
-
-console.log('encoding:');
-console.log([toString(Base64Wasm.encode(new Uint8Array([1,0,0])))]);
-console.log([Buffer.from([1,0,0]).toString('base64')]);
-console.log([toString(Base64Wasm.transcode(toBytes('AQAA')))]);
-
-
-const encode_input = new Uint8Array(49152);
-const s = Date.now();
-l = 0;
-for (let i = 0; i < ROUNDS; ++i) {
-  l += Base64Wasm.encode(encode_input).length;
-}
-const dur = Date.now() - s;
-console.log((encode_input.length * ROUNDS / dur * 1000 / 1024 / 1024).toFixed(0), 'MB/s', l, dur);
+playground();

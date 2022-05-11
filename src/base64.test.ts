@@ -44,7 +44,93 @@ describe('base64-sixel', () => {
       }
     });
   });
-  describe('encode', () => {});
+  describe('encode', () => {
+    it('encode --> decode + base64 compare - 1 byte', () => {
+      const d = new Uint8Array(1);
+      for (let i = 0; i < 256; ++i) {
+        d[0] = i;
+        const encoded = Base64Wasm.encode(d).slice();
+        assert.strictEqual(encoded.length, 2);
+        const b64 = Buffer.from(d).toString('base64');
+        assert.deepStrictEqual(encoded, Base64Wasm.transcode(toBytes(b64)));
+        assert.deepStrictEqual(Base64Wasm.decode(encoded), d);
+      }
+    });
+    it('encode --> decode + base64 compare - 2 bytes', () => {
+      const d = new Uint8Array(2);
+      for (let i = 0; i < 256; ++i) {
+        for (let k = 0; k < 256; ++k) {
+          d[0] = i;
+          d[1] = k;
+          const encoded = Base64Wasm.encode(d).slice();
+          assert.strictEqual(encoded.length, 3);
+          const b64 = Buffer.from(d).toString('base64');
+          assert.deepStrictEqual(encoded, Base64Wasm.transcode(toBytes(b64)));
+          assert.deepStrictEqual(Base64Wasm.decode(encoded), d);
+        }
+      }
+    });
+    it.skip('encode --> decode + base64 compare - 3 bytes', function() {
+      this.timeout(200000);
+      const d = new Uint8Array(3);
+      for (let i = 0; i < 256; ++i) {
+        for (let k = 0; k < 256; ++k) {
+          for (let j = 0; j < 256; ++j) {
+            d[0] = i;
+            d[1] = k;
+            d[2] = j;
+            const encoded = Base64Wasm.encode(d).slice();
+            assert.strictEqual(encoded.length, 4);
+            const b64 = Buffer.from(d).toString('base64');
+            assert.deepStrictEqual(encoded, Base64Wasm.transcode(toBytes(b64)));
+            assert.deepStrictEqual(Base64Wasm.decode(encoded), d);
+          }
+        }
+      }
+    });
+    it('encode --> decode + base64 compare - 2 + 2 bytes', function() {
+      const d = new Uint8Array(4);
+      for (let i = 0; i < 256; ++i) {
+        for (let k = 0; k < 256; ++k) {
+          d[0] = 0;
+          d[1] = 255;
+          d[2] = i;
+          d[3] = k;
+          const encoded = Base64Wasm.encode(d).slice();
+          assert.strictEqual(encoded.length, 6);
+          const b64 = Buffer.from(d).toString('base64');
+          assert.deepStrictEqual(encoded, Base64Wasm.transcode(toBytes(b64)));
+          assert.deepStrictEqual(Base64Wasm.decode(encoded), d);
+        }
+      }
+    });
+    it('encode --> decode + base64 compare - 11 + 2 bytes', function() {
+      const d = new Uint8Array([1,2,3,4,5,6,7,8,9,10,11,0,0]);
+      for (let i = 0; i < 256; ++i) {
+        for (let k = 0; k < 256; ++k) {
+          d[11] = i;
+          d[12] = k;
+          const encoded = Base64Wasm.encode(d).slice();
+          assert.strictEqual(encoded.length, 18);
+          const b64 = Buffer.from(d).toString('base64');
+          assert.deepStrictEqual(encoded, Base64Wasm.transcode(toBytes(b64)));
+          assert.deepStrictEqual(Base64Wasm.decode(encoded), d);
+        }
+      }
+    });
+    it('encode --> decode + base64 compare - 1 - 30 bytes', function() {
+      for (let i = 1; i < 31; ++i) {
+        const d = new Uint8Array(i);
+        for (let b = 0; b < 256; ++b) {
+          d.fill(b);
+          const encoded = Base64Wasm.encode(d).slice();
+          const b64 = Buffer.from(d).toString('base64');
+          assert.deepStrictEqual(encoded, Base64Wasm.transcode(toBytes(b64)));
+          assert.deepStrictEqual(Base64Wasm.decode(encoded), d);
+        }
+      }
+    });
+  });
   describe('decode', () => {
     it('decode underfull', () => {
       for (let i = 1; i < 16; ++i) {

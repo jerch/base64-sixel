@@ -8,7 +8,7 @@
 
 /**
  * TODO:
- * - encode (scalar + SIMD)
+ * - encode SIMD
  * - switch to pure C
  * - wasm build:
  *   - separate scalar and SIMD builds
@@ -45,9 +45,9 @@ const int TRANSCODE_LIMIT = CHUNK_SIZE;
 extern "C" {
   void* get_chunk_address() { return &CHUNK[0]; }
   void* get_target_address() { return &TARGET[0]; }
-  int transcode(int length);
   int encode(int length);
   int decode(int length);
+  int transcode(int length);
 }
 
 
@@ -70,60 +70,11 @@ static char STAND2SIXEL[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
 };
 
-/**
- * @brief Transcode base64-standard to base64-sixel (scalar).
- *
- * Allows SP, CR, LF and '=' as padding character in input data.
- * SP, CR and LF are skipped, '=' returns early.
- *
- * Returns number of transcoded characters written to TARGET.
- * In case of an invalid input character the 2-complement of its
- * position in input data is returned as error code.
- *
- * @param length  Amount of characters loaded in CHUNK to be transcoded.
- * @return int    Amount of characters written to TARGET, or error code.
- */
-int transcode(int length) {
-  unsigned char *dst = TARGET;
-  unsigned char *c = CHUNK;
-  unsigned char *c_end = c + length;
-  *c_end = 0;   // FIXME: get rid of this data manipulation
-  while (c < c_end) {
-    if (
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++])
-    ) {
-      dst--;
-      if (c - 1 >= c_end) {
-        return dst - TARGET;
-      }
-      unsigned char v = *(c - 1);
-      // exit early on first padding char =
-      if (v == 61) {
-        return dst - TARGET;
-      }
-      // skip SP, CR and LF
-      if (!(v == 32 || v == 13 || v == 10)) {
-        // negative number as error indicator (~position in chunk)
-        return -(c - CHUNK);
-      }
-    }
-  }
-  return dst - TARGET;
-}
-
 static unsigned int ENC_MASK1[256] = {0};
 static unsigned int ENC_MASK2[256] = {0};
 static unsigned int ENC_MASK3[256] = {0};
-static int masks_initialized = 0;
 
-void init_maps() {
+void init_masks() {
   unsigned char temp[4];
   unsigned int accu_int = 0;
   unsigned char *accu = (unsigned char *) &accu_int;
@@ -153,26 +104,45 @@ void init_maps() {
     temp[0] = accu_int >> 18;
     ENC_MASK3[i] = (*(int *) temp) & 0x3F3F3F3F;
   }
-  masks_initialized = 1;
 }
 
+
 /**
- * early encoding draft, ~1.8 GB/s in wasm, [1,72GiB/s] with pv
- * TODO:
- * - tail handling
- * - tests
- * - SIMD version
+ * @brief Encode bytes in CHUNK to base64-sixel characters.
+ *
+ * Loaded bytes may never exceed ENCODE_LIMIT (no bound checks done).
+ * TODO: SIMD version
+ *
+ * @param length  Amount of bytes loaded in CHUNK to be encoded.
+ * @return int    Number of characters written to TARGET.
  */
 int encode(int length) {
-  if (!masks_initialized) init_maps();
+  // lazy init of bitmasks
+  if (!ENC_MASK1[1]) init_masks();
   unsigned int *dst = (unsigned int *) TARGET;
   unsigned char *c = CHUNK;
   unsigned char *c_end = c + length;
-  for (; c < c_end; c += 12) {
+  for (; c + 12 <= c_end; c += 12) {
     *dst++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)]  | ENC_MASK3[*(c+2)] ) + 0x3F3F3F3F;
     *dst++ = (ENC_MASK1[*(c+3)] | ENC_MASK2[*(c+4)]  | ENC_MASK3[*(c+5)] ) + 0x3F3F3F3F;
     *dst++ = (ENC_MASK1[*(c+6)] | ENC_MASK2[*(c+7)]  | ENC_MASK3[*(c+8)] ) + 0x3F3F3F3F;
     *dst++ = (ENC_MASK1[*(c+9)] | ENC_MASK2[*(c+10)] | ENC_MASK3[*(c+11)]) + 0x3F3F3F3F;
+  }
+  if (c < c_end) {
+    for (; c + 3 <= c_end; c += 3) {
+      *dst++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)]  | ENC_MASK3[*(c+2)] ) + 0x3F3F3F3F;
+    }
+    if (c < c_end) {
+      int p = c_end - c;
+      unsigned char *d = (unsigned char *) dst;
+      unsigned int accu = (ENC_MASK1[*(c+0)] | ENC_MASK2[p == 2 ? *(c+1) : 0]) + 0x3F3F3F3F;
+      *d++ = accu & 0xFF;
+      *d++ = (accu >> 8) & 0xFF;
+      if (p == 2) {
+        *d++ = (accu >> 16) & 0xFF;
+      }
+      dst = (unsigned int *) d;
+    }
   }
   return (unsigned char *) dst - TARGET;
 }
@@ -181,15 +151,15 @@ int encode(int length) {
 #ifdef USE_SIMD
 
 /**
- * @brief Helper for SIMD path to do tail decoding and error handling.
+ * @brief Decode helper for SIMD path to do tail decoding and error handling.
  *
  * @param c       Pointer to current read position in CHUNK.
  * @param dst     Pointer to current write position in TARGET.
- * @param length  Amount of characters left in CHUNK to be handled.
- * @return int    Byte write length in TARGET, or error code.
+ * @param length  Number of characters left in CHUNK to be handled.
+ * @return int    Number of bytes written to TARGET, or error code.
  */
-int _decode_tail(unsigned char *c, unsigned char *dst, int length) {
-  unsigned int *inp = (unsigned int *) c;
+int _decode_tail(unsigned char *cc, unsigned char *dst, int length) {
+  unsigned int *inp = (unsigned int *) cc;
   unsigned char temp[4];
   unsigned char accu[4];
   int l = length >> 2;
@@ -205,10 +175,10 @@ int _decode_tail(unsigned char *c, unsigned char *dst, int length) {
     }
   }
   // error and tail handling
-  if ((unsigned char *) inp < CHUNK + length) {
+  if ((unsigned char *) inp < cc + length) {
     *((int *) temp) = 0;
     unsigned char *c = (unsigned char *) inp;
-    int end = CHUNK + length - c;
+    int end = cc + length - c;
     int p = 0;
     for (;p < 4 && p < end; ++p) {
       if ((temp[p] = c[p] - 63) & 0xC0) {
@@ -239,8 +209,8 @@ int _decode_tail(unsigned char *c, unsigned char *dst, int length) {
  *
  * Uses either scalar or SIMD version, depending on compile settings.
  *
- * @param length  Amount of characters loaded in CHUNK to be decoded.
- * @return int    Byte write length in TARGET, or error code.
+ * @param length  Number of characters loaded in CHUNK to be decoded.
+ * @return int    Number of bytes written to TARGET, or error code.
  */
 int decode(int length) {
 
@@ -328,4 +298,53 @@ int decode(int length) {
 
 #endif
 
+}
+
+
+/**
+ * @brief Transcode base64-standard to base64-sixel (scalar).
+ *
+ * Allows SP, CR, LF and '=' as padding character in input data.
+ * SP, CR and LF are skipped, '=' returns early.
+ *
+ * Returns number of transcoded characters written to TARGET.
+ * In case of an invalid input character the 2-complement of its
+ * position in input data is returned as error code.
+ *
+ * @param length  Amount of characters loaded in CHUNK to be transcoded.
+ * @return int    Amount of characters written to TARGET, or error code.
+ */
+int transcode(int length) {
+  unsigned char *dst = TARGET;
+  unsigned char *c = CHUNK;
+  unsigned char *c_end = c + length;
+  *c_end = 0;   // FIXME: get rid of this data manipulation
+  while (c < c_end) {
+    if (
+      !(*dst++ = STAND2SIXEL[*c++]) ||
+      !(*dst++ = STAND2SIXEL[*c++]) ||
+      !(*dst++ = STAND2SIXEL[*c++]) ||
+      !(*dst++ = STAND2SIXEL[*c++]) ||
+      !(*dst++ = STAND2SIXEL[*c++]) ||
+      !(*dst++ = STAND2SIXEL[*c++]) ||
+      !(*dst++ = STAND2SIXEL[*c++]) ||
+      !(*dst++ = STAND2SIXEL[*c++])
+    ) {
+      dst--;
+      if (c - 1 >= c_end) {
+        return dst - TARGET;
+      }
+      unsigned char v = *(c - 1);
+      // exit early on first padding char =
+      if (v == 61) {
+        return dst - TARGET;
+      }
+      // skip SP, CR and LF
+      if (!(v == 32 || v == 13 || v == 10)) {
+        // negative number as error indicator (~position in chunk)
+        return -(c - CHUNK);
+      }
+    }
+  }
+  return dst - TARGET;
 }
