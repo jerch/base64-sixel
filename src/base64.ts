@@ -179,13 +179,16 @@ for (let i = 0; i < input1.length; ++i) {
   data1[i] = input1.charCodeAt(i);
   data2[i] = input2.charCodeAt(i);
 }
-const ROUNDS = 1000;
+const ROUNDS = 10000;
 const start = Date.now();
+let l = 0;
 for (let i = 0; i < ROUNDS; ++i) {
-  Base64Wasm.decode(i%2 ? data1 : data2);
+  l+= Base64Wasm.decode(i%2 ? data1 : data2).length;
+  //const d = Base64Wasm.transcode(i%2 ? data1 : data2).slice(0);
+  //l+= Base64Wasm.decode(Base64Wasm.transcode(i%2 ? data1 : data2)).length;
 }
 const duration = Date.now() - start;
-console.log((input1.length * ROUNDS / duration * 1000 / 1024 / 1024).toFixed(0), 'MB/s');
+console.log((input1.length * ROUNDS / duration * 1000 / 1024 / 1024).toFixed(0), 'MB/s', l, duration);
 
 
 // error tests
@@ -197,4 +200,24 @@ console.log([
   toString(Base64Wasm.decode(Base64Wasm.transcode(toBytes(Buffer.from('Hello World1234567890123').toString('base64')))))
 ]);
 
-//console.log(Base64Wasm.decode(toBytes('????????????????QQ')));
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAA B')))]);
+//console.log([toString(Base64Wasm.transcode(toBytes('A#AAA\n\rAAAAAAAAAAAAAAAAAAAAA B')))]);
+
+//console.log([toString(Base64Wasm.decode(toBytes('?')))]);
+
+//console.log('####');
+//console.log([toString(Base64Wasm.decode(toBytes('?????')))]);
+//console.log('####');

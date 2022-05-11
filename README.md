@@ -130,25 +130,27 @@ Some notes on example implementations contained in the repo TODO...
 
 ### Performance
 
-Some early numbers for decoding:
+Some early numbers for decoding (on an old laptop):
 
-- wasm-scalar ~1.2 GB/s
-- wasm-SIMD ~7 GB/s
-- native only tested with early cmdline interface:
-```bash
-# SIMD
-$> pv -a data | ./base64 > /dev/null
-[4,28GiB/s]
-# scalar
-$> pv -a data | ./base64 > /dev/null
-[1,05GiB/s]
-# compared to base64 from system
-$> pv -a data | base64 -d > /dev/null
-[ 401MiB/s]
-# compared to cat
-$> pv -a data | cat > /dev/null
-[6,46GiB/s]
-```
+- wasm-scalar ~1.6 GB/s
+- wasm-SIMD ~7.3 GB/s
+- native-scalar ~1.9 GB/s (clang 10)
+- native-SIMD ~14 GB/s (clang 10)
+- early cmdline tool (not yet optimized for fast IO handling):
+  ```bash
+  # SIMD
+  $> pv -a data | ./base64-sixel > /dev/null
+  [4,69GiB/s]
+  # scalar
+  $> pv -a data | ./base64-sixel > /dev/null
+  [1,45GiB/s]
+  # compared to base64 from system
+  $> pv -a data | base64 -d > /dev/null
+  [ 401MiB/s]
+  # compared to cat
+  $> pv -a data | cat > /dev/null
+  [6,46GiB/s]
+  ```
 
 
 ### Status

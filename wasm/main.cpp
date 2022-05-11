@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "base64.cpp"
 
@@ -19,6 +20,19 @@
  * - scalar g++ -O3 -DCHUNK_SIZE=65536 main.cpp -o base64
  */
 
+
+int main__(int argc, char **argv) {
+  for (int k = 0; k < 65536; ++k) CHUNK[k] = 65;
+  int total = atoi(argv[1]);
+  long long decoded = 0;
+  for (int i = 0; i < total; ++i) {
+    decoded += decode(65536);
+  }
+  printf("%d,%d,%d  %lld  %d %d, %d\n", TARGET[0], TARGET[1], TARGET[2], decoded, total, CHUNK[65535], CHUNK_SIZE);
+  printf("%p %p", &CHUNK[65536], TARGET);
+  return 0;
+}
+
 int main(int argc, char **argv) {
   int errnum;
   int fd = 0;
@@ -34,7 +48,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   while (1) {
-    int read_bytes = read(fd, chunk, CHUNK_SIZE);
+    int read_bytes = read(fd, CHUNK, CHUNK_SIZE);
     if (read_bytes < 0) {
       errnum = errno;
       fprintf(stderr, "read error %d: %s\n", errnum, strerror(errnum));
@@ -49,7 +63,7 @@ int main(int argc, char **argv) {
       // do something here about it - merge later? --> better perf with aligned decoding
     }
     int decoded_bytes = decode(read_bytes);
-    printf("decoded result: %d\n", decoded_bytes);
+    //printf("decoded result: %d\n", decoded_bytes);
     if (decoded_bytes < 0) {
       // TODO: needs counter over all bytes so far
       fprintf(stderr, "exiting due to decoding error at: %d\n", ~decoded_bytes);
@@ -58,7 +72,7 @@ int main(int argc, char **argv) {
     }
     int left = decoded_bytes;
     while (left > 0) {
-      int written_bytes = write(1, target+(decoded_bytes-left), left);
+      int written_bytes = write(1, TARGET+(decoded_bytes-left), left);
       if (written_bytes < 0) {
         errnum = errno;
         fprintf(stderr, "write error %d: - %s\n", errnum, strerror(errnum));
