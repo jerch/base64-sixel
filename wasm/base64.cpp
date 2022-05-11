@@ -211,7 +211,6 @@ int decode(int length) {
     _mm_storeu_si128((__m128i *) dst, v5);
     dst += 12;
   }
-  // TODO: cleanup lines below
   // postponed error handling: all lanes in error should be zero
   if (_mm_movemask_epi8(_mm_cmpeq_epi8(error, _mm_setzero_si128())) != 0xFFFF) {
     // there was an error somewhere in the data,
@@ -219,7 +218,7 @@ int decode(int length) {
     // this penalizes bad cases, good data can run at full speed
     return _decode_tail(CHUNK, TARGET, length);
   }
-  if (((unsigned char *) inp) < CHUNK + length) {
+  if ((unsigned char *) inp < CHUNK + length) {
     return _decode_tail((unsigned char *) inp, dst, length - ((length >> 4) << 4));
   }
   return dst - TARGET;
