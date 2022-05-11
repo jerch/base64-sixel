@@ -36,12 +36,17 @@
 static unsigned char CHUNK[CHUNK_SIZE+1] __attribute__((aligned(16)));
 static unsigned char TARGET[CHUNK_SIZE] __attribute__((aligned(16)));
 
+const int ENCODE_LIMIT = CHUNK_SIZE / 4 * 3;
+const int DECODE_LIMIT = CHUNK_SIZE;
+const int TRANSCODE_LIMIT = CHUNK_SIZE;
+
 
 // exported functions
 extern "C" {
   void* get_chunk_address() { return &CHUNK[0]; }
   void* get_target_address() { return &TARGET[0]; }
   int transcode(int length);
+  int encode(int length);
   int decode(int length);
 }
 
@@ -82,7 +87,7 @@ int transcode(int length) {
   unsigned char *dst = TARGET;
   unsigned char *c = CHUNK;
   unsigned char *c_end = c + length;
-  *c_end = 0;
+  *c_end = 0;   // FIXME: get rid of this data manipulation
   while (c < c_end) {
     if (
       !(*dst++ = STAND2SIXEL[*c++]) ||
@@ -113,9 +118,63 @@ int transcode(int length) {
   return dst - TARGET;
 }
 
+static unsigned int ENC_MASK1[256] = {0};
+static unsigned int ENC_MASK2[256] = {0};
+static unsigned int ENC_MASK3[256] = {0};
+static int masks_initialized = 0;
+
+void init_maps() {
+  unsigned char temp[4];
+  unsigned int accu_int = 0;
+  unsigned char *accu = (unsigned char *) &accu_int;
+  for (int i = 0; i < 256; ++i) {
+    accu[2] = i;
+    temp[3] = accu_int;
+    temp[2] = accu_int >> 6;
+    temp[1] = accu_int >> 12;
+    temp[0] = accu_int >> 18;
+    ENC_MASK1[i] = (*(int *) temp) & 0x3F3F3F3F;
+  }
+  accu_int = 0;
+  for (int i = 0; i < 256; ++i) {
+    accu[1] = i;
+    temp[3] = accu_int;
+    temp[2] = accu_int >> 6;
+    temp[1] = accu_int >> 12;
+    temp[0] = accu_int >> 18;
+    ENC_MASK2[i] = (*(int *) temp) & 0x3F3F3F3F;
+  }
+  accu_int = 0;
+  for (int i = 0; i < 256; ++i) {
+    accu[0] = i;
+    temp[3] = accu_int;
+    temp[2] = accu_int >> 6;
+    temp[1] = accu_int >> 12;
+    temp[0] = accu_int >> 18;
+    ENC_MASK3[i] = (*(int *) temp) & 0x3F3F3F3F;
+  }
+  masks_initialized = 1;
+}
+
+/**
+ * early encoding draft, ~1.8 GB/s in wasm, [1,72GiB/s] with pv
+ * TODO:
+ * - tail handling
+ * - tests
+ * - SIMD version
+ */
 int encode(int length) {
-  // TODO: SIMD and scalar version
-  return 0;
+  if (!masks_initialized) init_maps();
+  unsigned int *dst = (unsigned int *) TARGET;
+  unsigned char *c = CHUNK;
+  unsigned char *c_end = c + length;
+  for (; c < c_end; c += 12) {
+    *dst++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)]  | ENC_MASK3[*(c+2)] ) + 0x3F3F3F3F;
+    *dst++ = (ENC_MASK1[*(c+3)] | ENC_MASK2[*(c+4)]  | ENC_MASK3[*(c+5)] ) + 0x3F3F3F3F;
+    *dst++ = (ENC_MASK1[*(c+6)] | ENC_MASK2[*(c+7)]  | ENC_MASK3[*(c+8)] ) + 0x3F3F3F3F;
+    *dst++ = (ENC_MASK1[*(c+9)] | ENC_MASK2[*(c+10)] | ENC_MASK3[*(c+11)]) + 0x3F3F3F3F;
+  }
+  return (unsigned char *) dst - TARGET;
 }
 
 

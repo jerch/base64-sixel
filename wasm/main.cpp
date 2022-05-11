@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   while (1) {
-    int read_bytes = read(fd, CHUNK, CHUNK_SIZE);
+    int read_bytes = read(fd, CHUNK, ENCODE_LIMIT);
     if (read_bytes < 0) {
       errnum = errno;
       fprintf(stderr, "read error %d: %s\n", errnum, strerror(errnum));
@@ -58,11 +58,11 @@ int main(int argc, char **argv) {
     if (read_bytes == 0) {
       break;
     }
-    if (read_bytes < CHUNK_SIZE) {
-      fprintf(stderr, "Warning: read less than CHUNKSIZE - %d\n", read_bytes);
-      // do something here about it - merge later? --> better perf with aligned decoding
-    }
-    int decoded_bytes = decode(read_bytes);
+    //if (read_bytes < CHUNK_SIZE) {
+    //  fprintf(stderr, "Warning: read less than CHUNKSIZE - %d\n", read_bytes);
+    //  // do something here about it - merge later? --> better perf with aligned decoding
+    //}
+    int decoded_bytes = encode(read_bytes);
     //printf("decoded result: %d\n", decoded_bytes);
     if (decoded_bytes < 0) {
       // TODO: needs counter over all bytes so far

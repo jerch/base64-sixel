@@ -7,6 +7,7 @@ interface IWasmInternalExports extends Record<string, WebAssembly.ExportValue> {
   memory: WebAssembly.Memory;
   get_chunk_address(): number;
   get_target_address(): number;
+  encode(length: number): number;
   decode(length: number): number;
   transcode(length: number): number;
 }
@@ -34,7 +35,17 @@ export class Base64Wasm {
   static _wasm = Base64Wasm._instance.exports as IWasmInternalExports;
   static _chunk = new Uint8Array(Base64Wasm._wasm.memory.buffer, Base64Wasm._wasm.get_chunk_address(), WASM.CHUNK_SIZE);
   static _target = new Uint8Array(Base64Wasm._wasm.memory.buffer, Base64Wasm._wasm.get_target_address(), WASM.CHUNK_SIZE);
-  
+
+  static encode(data: Uint8Array, start: number = 0, end: number = data.length): Uint8Array {
+    // FIXME: needs proper overflow check!
+    if (end - start > WASM.CHUNK_SIZE) {
+      throw new Error('data too big');
+    }
+    Base64Wasm._chunk.set(data.subarray(start, end));
+    const length = Base64Wasm._wasm.encode(end - start);
+    return Base64Wasm._target.subarray(0, length);
+  }
+
   static decode(data: Uint8Array, start: number = 0, end: number = data.length): Uint8Array {
     if (end - start > WASM.CHUNK_SIZE) {
       throw new Error('data too big');
@@ -60,7 +71,7 @@ export class Base64Wasm {
   }
 
   // FIXME: quickly hacked in TS for now, needs wasm impl
-  static encode(data: Uint8Array, start: number = 0, end: number = data.length): Uint8Array {
+  static encode__(data: Uint8Array, start: number = 0, end: number = data.length): Uint8Array {
     let length = end - start;
     const target = new Uint8Array(Math.ceil(length / 3) * 4);
     if (!length) {
@@ -221,3 +232,18 @@ console.log([toString(Base64Wasm.transcode(toBytes('AAAAAAAAAAAAAAAAAAAAAAAAAA B
 //console.log('####');
 //console.log([toString(Base64Wasm.decode(toBytes('?????')))]);
 //console.log('####');
+
+console.log('encoding:');
+console.log([toString(Base64Wasm.encode(new Uint8Array([1,0,0])))]);
+console.log([Buffer.from([1,0,0]).toString('base64')]);
+console.log([toString(Base64Wasm.transcode(toBytes('AQAA')))]);
+
+
+const encode_input = new Uint8Array(49152);
+const s = Date.now();
+l = 0;
+for (let i = 0; i < ROUNDS; ++i) {
+  l += Base64Wasm.encode(encode_input).length;
+}
+const dur = Date.now() - s;
+console.log((encode_input.length * ROUNDS / dur * 1000 / 1024 / 1024).toFixed(0), 'MB/s', l, dur);

@@ -45,6 +45,7 @@ source $EMSCRIPTEN_PATH
 #-s INITIAL_MEMORY=$INITIAL_MEMORY \
 #-s MAXIMUM_MEMORY=$INITIAL_MEMORY \
 #-s EXPORTED_FUNCTIONS='[
+#  "_encode",
 #  "_transcode",
 #  "_decode",
 #  "_get_chunk_address",
@@ -63,6 +64,7 @@ emcc -O3 \
 -s INITIAL_MEMORY=$INITIAL_MEMORY \
 -s MAXIMUM_MEMORY=$INITIAL_MEMORY \
 -s EXPORTED_FUNCTIONS='[
+  "_encode",
   "_transcode",
   "_decode",
   "_get_chunk_address",
