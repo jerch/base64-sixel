@@ -130,10 +130,10 @@ Some notes on example implementations contained in the repo TODO...
 
 ### Performance
 
-Some early numbers for decoding (on an old laptop):
+Some early numbers for decoding (on an old laptop, i7-2760QM):
 
 - wasm-scalar ~1.6 GB/s
-- wasm-SIMD ~7.3 GB/s
+- wasm-SIMD ~7.3 GB/s (including copy step, preloaded is at 11.2 GB/s)
 - native-scalar ~1.9 GB/s (clang 10)
 - native-SIMD ~14 GB/s (clang 10)
 - early cmdline tool (not yet optimized for fast IO handling):
