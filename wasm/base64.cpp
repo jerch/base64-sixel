@@ -317,9 +317,8 @@ int decode(int length) {
 int transcode(int length) {
   unsigned char *dst = TARGET;
   unsigned char *c = CHUNK;
-  unsigned char *c_end = c + length;
-  *c_end = 0;   // FIXME: get rid of this data manipulation
-  while (c < c_end) {
+  unsigned char *c_end8 = CHUNK + length - 8;
+  while (c < c_end8) {
     if (
       !(*dst++ = STAND2SIXEL[*c++]) ||
       !(*dst++ = STAND2SIXEL[*c++]) ||
@@ -331,19 +330,21 @@ int transcode(int length) {
       !(*dst++ = STAND2SIXEL[*c++])
     ) {
       dst--;
-      if (c - 1 >= c_end) {
-        return dst - TARGET;
-      }
       unsigned char v = *(c - 1);
       // exit early on first padding char =
-      if (v == 61) {
-        return dst - TARGET;
-      }
-      // skip SP, CR and LF
-      if (!(v == 32 || v == 13 || v == 10)) {
-        // negative number as error indicator (~position in chunk)
-        return -(c - CHUNK);
-      }
+      if (v == 61) return dst - TARGET;
+      // skip SP, CR and LF, negative number as error indicator (~position in chunk)
+      if (!(v == 32 || v == 13 || v == 10)) return -(c - CHUNK);
+    }
+  }
+  // handle tail
+  unsigned char *c_end = CHUNK + length;
+  while (c < c_end) {
+    if (!(*dst++ = STAND2SIXEL[*c++])) {
+      dst--;
+      unsigned char v = *(c - 1);
+      if (v == 61) return dst - TARGET;
+      if (!(v == 32 || v == 13 || v == 10)) return -(c - CHUNK);
     }
   }
   return dst - TARGET;

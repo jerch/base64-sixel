@@ -4,3 +4,5 @@ package-lock.json
 benchmark/
 wasm/*.wasm
 wasm/data
+wasm/data_b64
+wasm/base64-sixel
