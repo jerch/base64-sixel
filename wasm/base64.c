@@ -8,15 +8,12 @@
 
 /**
  * TODO:
- * - encode SIMD
- * - switch to pure C
+ * - encode: cleanup SIMD, more tests
  * - wasm build:
  *   - separate scalar and SIMD builds
- *   - stream aware decode/encode on static memory (needs ctx object)
  * - native build:
  *   - pointered interface (no static memory)
  *   - makefile + header
- * - small cmdline tool for encode/transcode/decode (see coreutils/base64)
  */
 
 
@@ -31,6 +28,9 @@
 #include <immintrin.h>
 #endif
 
+//#define USE_SIMD 1
+//#include <immintrin.h>
+
 
 /** operate on static memory for wasm */
 static unsigned char CHUNK[CHUNK_SIZE+1] __attribute__((aligned(16)));
@@ -42,13 +42,17 @@ const int TRANSCODE_LIMIT = CHUNK_SIZE;
 
 
 // exported functions
+#ifdef __cplusplus
 extern "C" {
+#endif
   void* get_chunk_address() { return &CHUNK[0]; }
   void* get_target_address() { return &TARGET[0]; }
   int encode(int length);
   int decode(int length);
   int transcode(int length);
+#ifdef __cplusplus
 }
+#endif
 
 
 static char STAND2SIXEL[] = {
@@ -106,6 +110,68 @@ void init_masks() {
   }
 }
 
+#ifdef USE_SIMD
+int encode(int length) {
+  __m128i *dst_v = (__m128i*) TARGET;
+  unsigned char *inp = CHUNK;
+  unsigned char *inp_end = CHUNK + length;
+  while (inp + 12 <= inp_end) {
+    __m128i v1 = _mm_loadu_si128((__m128i *) inp);
+    __m128i v2 = _mm_shuffle_epi8(v1, _mm_set_epi8(
+      10, 11,  9, 10,
+       7,  8,  6,  7,
+       4,  5,  3,  4,
+       1,  2,  0,  1
+    ));
+
+    #ifdef __EMSCRIPTEN__
+    // faster on wasm:
+    __m128i index_a = _mm_and_si128(_mm_srli_epi32(v2, 10), _mm_set1_epi32(0x0000003f));
+    __m128i index_b = _mm_and_si128(_mm_slli_epi32(v2, 4),  _mm_set1_epi32(0x00003f00));
+    __m128i index_c = _mm_and_si128(_mm_srli_epi32(v2, 6),  _mm_set1_epi32(0x003f0000));
+    __m128i index_d = _mm_and_si128(_mm_slli_epi32(v2, 8),  _mm_set1_epi32(0x3f000000));
+    __m128i a_b = _mm_or_si128(index_a, index_b);
+    __m128i c_d = _mm_or_si128(index_c, index_d);
+    __m128i indices = _mm_or_si128(a_b, c_d);
+    #else
+    // slightly faster on native (but worse than scalar on wasm due to costly mul emulation):
+    __m128i t0 = _mm_and_si128(v2, _mm_set1_epi32(0x0fc0fc00));
+    __m128i t1 = _mm_mulhi_epu16(t0, _mm_set1_epi32(0x04000040));
+    __m128i t2 = _mm_and_si128(v2, _mm_set1_epi32(0x003f03f0));
+    __m128i t3 = _mm_mullo_epi16(t2, _mm_set1_epi32(0x01000010));
+    __m128i indices = _mm_or_si128(t1, t3);
+    #endif
+
+    __m128i result = _mm_add_epi8(indices, _mm_set1_epi8(63));
+    _mm_store_si128(dst_v++, result);
+    inp += 12;
+  }
+  // TODO: cleanup mess below
+  unsigned char *c = inp;
+  unsigned char *c_end = CHUNK + length;
+  unsigned int *dst_int = (unsigned int *) dst_v;
+  if (c < c_end) {
+    if (!ENC_MASK1[1]) init_masks();
+    for (; c + 3 <= c_end; c += 3) {
+      *dst_int++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)]  | ENC_MASK3[*(c+2)] ) + 0x3F3F3F3F;
+    }
+    if (c < c_end) {
+      int p = c_end - c;
+      unsigned char *d = (unsigned char *) dst_int;
+      unsigned int accu = (ENC_MASK1[*(c+0)] | ENC_MASK2[p == 2 ? *(c+1) : 0]) + 0x3F3F3F3F;
+      *d++ = accu & 0xFF;
+      *d++ = (accu >> 8) & 0xFF;
+      if (p == 2) {
+        *d++ = (accu >> 16) & 0xFF;
+      }
+      dst_int = (unsigned int *) d;
+    }
+    dst_v = (__m128i*) dst_int;
+  }
+  return ((unsigned char *) dst_v) - TARGET;
+}
+#else
+
 
 /**
  * @brief Encode bytes in CHUNK to base64-sixel characters.
@@ -146,6 +212,7 @@ int encode(int length) {
   }
   return (unsigned char *) dst - TARGET;
 }
+#endif
 
 
 #ifdef USE_SIMD

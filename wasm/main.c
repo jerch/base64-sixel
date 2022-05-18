@@ -5,7 +5,10 @@
 #include <string.h>
 #include <stdlib.h>
 
-#include "base64.cpp"
+#include <sys/stat.h>
+#include <getopt.h>
+
+#include "base64.c"
 
 /**
  * TODO:
@@ -15,6 +18,9 @@
  * build
  * - SIMD   g++ -O3 -DCHUNK_SIZE=65536 -msse -msse2 -mssse3 -msse4.1 main.cpp -o base64-sixel
  * - scalar g++ -O3 -DCHUNK_SIZE=65536 main.cpp -o base64-sixel
+ * 
+ * build C
+ * clang -std=c99 -Wall -Wextra -march=native -O3 -DCHUNK_SIZE=65536 main.c -o base64-sixel
  */
 
 

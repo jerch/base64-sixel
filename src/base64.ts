@@ -127,3 +127,22 @@ function playground() {
 
 }
 playground();
+
+function encode_test() {
+  const data = new Uint8Array(12);
+  data.fill(16);
+  console.log('enocde tests');
+  console.log([toString(Base64Wasm.encode(data))]);
+  console.log([toString(Base64Wasm.transcode(toBytes(Buffer.from(data).toString('base64'))))]);
+
+  const ROUNDS = 10000;
+  const encode_input = new Uint8Array(49152);
+  const s = Date.now();
+  let l = 0;
+  for (let i = 0; i < ROUNDS; ++i) {
+    l += Base64Wasm.encode(encode_input).length;
+  }
+  const dur = Date.now() - s;
+  console.log((encode_input.length * ROUNDS / dur * 1000 / 1024 / 1024).toFixed(0), 'MB/s', l, dur);
+}
+encode_test();

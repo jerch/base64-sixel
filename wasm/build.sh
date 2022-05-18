@@ -36,14 +36,13 @@ source $EMSCRIPTEN_PATH
 
 #emcc -O3 \
 #-DCHUNK_SIZE=$CHUNK_SIZE \
-#-DCANVAS_SIZE=$CANVAS_SIZE \
-#-DPALETTE_SIZE=$PALETTE_SIZE \
 #-s ASSERTIONS=0 \
 #-s SUPPORT_ERRNO=0 \
 #-s TOTAL_STACK=16384 \
 #-s MALLOC=none \
 #-s INITIAL_MEMORY=$INITIAL_MEMORY \
 #-s MAXIMUM_MEMORY=$INITIAL_MEMORY \
+#-s DEFAULT_TO_CXX=0 \
 #-s EXPORTED_FUNCTIONS='[
 #  "_encode",
 #  "_transcode",
@@ -51,18 +50,17 @@ source $EMSCRIPTEN_PATH
 #  "_get_chunk_address",
 #  "_get_target_address"
 #]' \
-#-mbulk-memory --no-entry base64.cpp -o base64.wasm
+#-mbulk-memory -std=c99 -Wall -Wextra --no-entry base64.c -o base64.wasm
 
 emcc -O3 \
 -DCHUNK_SIZE=$CHUNK_SIZE \
--DCANVAS_SIZE=$CANVAS_SIZE \
--DPALETTE_SIZE=$PALETTE_SIZE \
 -s ASSERTIONS=0 \
 -s SUPPORT_ERRNO=0 \
 -s TOTAL_STACK=16384 \
 -s MALLOC=none \
 -s INITIAL_MEMORY=$INITIAL_MEMORY \
 -s MAXIMUM_MEMORY=$INITIAL_MEMORY \
+-s DEFAULT_TO_CXX=0 \
 -s EXPORTED_FUNCTIONS='[
   "_encode",
   "_transcode",
@@ -70,7 +68,7 @@ emcc -O3 \
   "_get_chunk_address",
   "_get_target_address"
 ]' \
--msimd128 -msse -msse2 -mssse3 -msse4.1 -mbulk-memory --no-entry base64.cpp -o base64.wasm
+-msimd128 -msse -msse2 -mssse3 -msse4.1 -mbulk-memory -std=c99 -Wall -Wextra --no-entry base64.c -o base64.wasm
 
 # wrap wasm bytes into JSON file
 node wrap_wasm.js $CHUNK_SIZE
