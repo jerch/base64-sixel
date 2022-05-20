@@ -6,3 +6,9 @@ wasm/*.wasm
 wasm/data
 wasm/data_b64
 wasm/base64-sixel
+
+__pycache__
+
+*.o
+*.a
+*.so

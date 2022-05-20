@@ -1,61 +1,7 @@
-/**
- * Base64-sixel for WASM.
- * 
- * Copyright (c) 2022 Joerg Breitbart.
- * @license MIT
- */
+#include <stdint.h>
+#include "base64-sixel.h"
 
-
-/**
- * TODO:
- * - encode: cleanup SIMD, more tests
- * - wasm build:
- *   - separate scalar and SIMD builds
- * - native build:
- *   - pointered interface (no static memory)
- *   - makefile + header
- */
-
-
-// cmdline overridable defines
-#ifndef CHUNK_SIZE
-  #define CHUNK_SIZE 4096
-#endif
-
-/** check SIMD support (build with -msse -msse2 -mssse3 -msse4.1) */
-#if defined(__SSE__) && defined(__SSE2__) && defined(__SSSE3__) && defined(__SSE4_1__)
-#define USE_SIMD 1
-#include <immintrin.h>
-#endif
-
-//#define USE_SIMD 1
-//#include <immintrin.h>
-
-
-/** operate on static memory for wasm */
-static unsigned char CHUNK[CHUNK_SIZE+1] __attribute__((aligned(16)));
-static unsigned char TARGET[CHUNK_SIZE] __attribute__((aligned(16)));
-
-const int ENCODE_LIMIT = CHUNK_SIZE / 4 * 3;
-const int DECODE_LIMIT = CHUNK_SIZE;
-const int TRANSCODE_LIMIT = CHUNK_SIZE;
-
-
-// exported functions
-#ifdef __cplusplus
-extern "C" {
-#endif
-  void* get_chunk_address() { return &CHUNK[0]; }
-  void* get_target_address() { return &TARGET[0]; }
-  int encode(int length);
-  int decode(int length);
-  int transcode(int length);
-#ifdef __cplusplus
-}
-#endif
-
-
-static char STAND2SIXEL[] = {
+static const char STAND2SIXEL[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,125,  0,  0,  0,126,
@@ -74,21 +20,23 @@ static char STAND2SIXEL[] = {
     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0
 };
 
-static unsigned int ENC_MASK1[256] = {0};
-static unsigned int ENC_MASK2[256] = {0};
-static unsigned int ENC_MASK3[256] = {0};
+// FIXME: pre-initialize and make const
+static uint32_t ENC_MASK1[256] = {0};
+static uint32_t ENC_MASK2[256] = {0};
+static uint32_t ENC_MASK3[256] = {0};
 
+// FIXME: to be removed
 static inline void init_masks() {
-  unsigned char temp[4];
-  unsigned int accu_int = 0;
-  unsigned char *accu = (unsigned char *) &accu_int;
+  uint8_t temp[4];
+  uint32_t accu_int = 0;
+  uint8_t *accu = (uint8_t *) &accu_int;
   for (int i = 0; i < 256; ++i) {
     accu[2] = i;
     temp[3] = accu_int;
     temp[2] = accu_int >> 6;
     temp[1] = accu_int >> 12;
     temp[0] = accu_int >> 18;
-    ENC_MASK1[i] = (*(int *) temp) & 0x3F3F3F3F;
+    ENC_MASK1[i] = (*(uint32_t *) temp) & 0x3F3F3F3F;
   }
   accu_int = 0;
   for (int i = 0; i < 256; ++i) {
@@ -97,7 +45,7 @@ static inline void init_masks() {
     temp[2] = accu_int >> 6;
     temp[1] = accu_int >> 12;
     temp[0] = accu_int >> 18;
-    ENC_MASK2[i] = (*(int *) temp) & 0x3F3F3F3F;
+    ENC_MASK2[i] = (*(uint32_t *) temp) & 0x3F3F3F3F;
   }
   accu_int = 0;
   for (int i = 0; i < 256; ++i) {
@@ -106,26 +54,15 @@ static inline void init_masks() {
     temp[2] = accu_int >> 6;
     temp[1] = accu_int >> 12;
     temp[0] = accu_int >> 18;
-    ENC_MASK3[i] = (*(int *) temp) & 0x3F3F3F3F;
+    ENC_MASK3[i] = (*(uint32_t *) temp) & 0x3F3F3F3F;
   }
 }
 
-
-/**
- * @brief Encode bytes in CHUNK to base64-sixel characters.
- *
- * Loaded bytes may never exceed ENCODE_LIMIT (no bound checks done).
- *
- * @param length  Amount of bytes loaded in CHUNK to be encoded.
- * @return int    Number of characters written to TARGET.
- */
-int encode(int length) {
-
 #ifdef USE_SIMD
-
-  __m128i *dst_v = (__m128i*) TARGET;
-  unsigned char *inp = CHUNK;
-  unsigned char *inp_end = CHUNK + length;
+ssize_t base64sixel_encode(const uint8_t *src, size_t srclen, const uint8_t *dst) {
+  __m128i *dst_v = (__m128i*) dst;
+  unsigned char *inp = src;
+  unsigned char *inp_end = src + srclen;
   while (inp + 12 <= inp_end) {
     __m128i v1 = _mm_loadu_si128((__m128i *) inp);
     __m128i v2 = _mm_shuffle_epi8(v1, _mm_set_epi8(
@@ -154,12 +91,12 @@ int encode(int length) {
     #endif
 
     __m128i result = _mm_add_epi8(indices, _mm_set1_epi8(63));
-    _mm_store_si128(dst_v++, result);
+    _mm_storeu_si128(dst_v++, result);
     inp += 12;
   }
   // TODO: cleanup mess below
   unsigned char *c = inp;
-  unsigned char *c_end = CHUNK + length;
+  unsigned char *c_end = src + srclen;
   unsigned int *dst_int = (unsigned int *) dst_v;
   if (c < c_end) {
     if (!ENC_MASK1[1]) init_masks();
@@ -179,54 +116,42 @@ int encode(int length) {
     }
     dst_v = (__m128i*) dst_int;
   }
-  return ((unsigned char *) dst_v) - TARGET;
-
+  return ((unsigned char *) dst_v) - dst;
+}
 #else
-
-  if (!ENC_MASK1[1]) init_masks();
-  unsigned int *dst = (unsigned int *) TARGET;
-  unsigned char *c = CHUNK;
-  unsigned char *c_end = c + length;
-  for (; c + 12 <= c_end; c += 12) {
-    *dst++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)]  | ENC_MASK3[*(c+2)] ) + 0x3F3F3F3F;
-    *dst++ = (ENC_MASK1[*(c+3)] | ENC_MASK2[*(c+4)]  | ENC_MASK3[*(c+5)] ) + 0x3F3F3F3F;
-    *dst++ = (ENC_MASK1[*(c+6)] | ENC_MASK2[*(c+7)]  | ENC_MASK3[*(c+8)] ) + 0x3F3F3F3F;
-    *dst++ = (ENC_MASK1[*(c+9)] | ENC_MASK2[*(c+10)] | ENC_MASK3[*(c+11)]) + 0x3F3F3F3F;
+ssize_t base64sixel_encode(const uint8_t *src, size_t srclen, const uint8_t *dst) {
+  if (!ENC_MASK1[1]) init_masks();  // to be removed...
+  uint32_t *dst4 = (uint32_t *) dst;
+  uint8_t *c = (uint8_t *) src;
+  uint8_t *c_end = c + srclen;
+  for (; c + 12 <= c_end; c += 12) { // check for unroll/autovectorize
+    *dst4++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)]  | ENC_MASK3[*(c+2)] ) + 0x3F3F3F3F;
+    *dst4++ = (ENC_MASK1[*(c+3)] | ENC_MASK2[*(c+4)]  | ENC_MASK3[*(c+5)] ) + 0x3F3F3F3F;
+    *dst4++ = (ENC_MASK1[*(c+6)] | ENC_MASK2[*(c+7)]  | ENC_MASK3[*(c+8)] ) + 0x3F3F3F3F;
+    *dst4++ = (ENC_MASK1[*(c+9)] | ENC_MASK2[*(c+10)] | ENC_MASK3[*(c+11)]) + 0x3F3F3F3F;
   }
   if (c < c_end) {
     for (; c + 3 <= c_end; c += 3) {
-      *dst++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)]  | ENC_MASK3[*(c+2)] ) + 0x3F3F3F3F;
+      *dst4++ = (ENC_MASK1[*(c+0)] | ENC_MASK2[*(c+1)] | ENC_MASK3[*(c+2)]) + 0x3F3F3F3F;
     }
     if (c < c_end) {
       int p = c_end - c;
-      unsigned char *d = (unsigned char *) dst;
-      unsigned int accu = (ENC_MASK1[*(c+0)] | ENC_MASK2[p == 2 ? *(c+1) : 0]) + 0x3F3F3F3F;
+      uint8_t *d = (uint8_t *) dst4;
+      uint32_t accu = (ENC_MASK1[*(c+0)] | ENC_MASK2[p == 2 ? *(c+1) : 0]) + 0x3F3F3F3F;
       *d++ = accu & 0xFF;
       *d++ = (accu >> 8) & 0xFF;
       if (p == 2) {
         *d++ = (accu >> 16) & 0xFF;
       }
-      dst = (unsigned int *) d;
+      dst4 = (uint32_t *) d;
     }
   }
-  return (unsigned char *) dst - TARGET;
-
+  return (uint8_t *) dst4 - dst;
+}
 #endif
 
-}
-
-
 #ifdef USE_SIMD
-
-/**
- * @brief Decode helper for SIMD path to do tail decoding and error handling.
- *
- * @param c       Pointer to current read position in CHUNK.
- * @param dst     Pointer to current write position in TARGET.
- * @param length  Number of characters left in CHUNK to be handled.
- * @return int    Number of bytes written to TARGET, or error code.
- */
-int _decode_tail(unsigned char *cc, unsigned char *dst, int length) {
+int _decode_tail(unsigned char *cc, unsigned char *dst, int length, uint8_t *src_orig, uint8_t *dst_orig) {
   unsigned int *inp = (unsigned int *) cc;
   unsigned char temp[4];
   unsigned char accu[4];
@@ -251,7 +176,7 @@ int _decode_tail(unsigned char *cc, unsigned char *dst, int length) {
     for (;p < 4 && p < end; ++p) {
       if ((temp[p] = c[p] - 63) & 0xC0) {
         // error: non sixel char
-        return -(c+p+1 - CHUNK);
+        return -(c+p+1 - src_orig);
       }
     }
     // tail
@@ -266,30 +191,15 @@ int _decode_tail(unsigned char *cc, unsigned char *dst, int length) {
       *dst++ = accu[1];
     }
   }
-  return dst - TARGET;
+  return dst - dst_orig;
 }
-
-#endif
-
-
-/**
- * @brief Decode base64-sixel characters loaded in CHUNK.
- *
- * Uses either scalar or SIMD version, depending on compile settings.
- *
- * @param length  Number of characters loaded in CHUNK to be decoded.
- * @return int    Number of bytes written to TARGET, or error code.
- */
-int decode(int length) {
-
-#ifdef USE_SIMD
-
-  unsigned char *dst = TARGET;
-  __m128i *inp = (__m128i*) CHUNK;
+ssize_t base64sixel_decode(const uint8_t *src, size_t srclen, const uint8_t *dst) {
+  uint8_t *d = (uint8_t *) dst;
+  __m128i *inp = (__m128i*) src;
   __m128i error = _mm_setzero_si128();
-  int l = length >> 4;
+  int l = srclen >> 4;
   while (l--) {
-    __m128i v1 = _mm_load_si128(inp++);
+    __m128i v1 = _mm_loadu_si128(inp++);
     // subtract 63
     __m128i v2 = _mm_add_epi8(v1, _mm_set1_epi8(-63));
     // error detection: just aggregate, eval afterwards
@@ -305,115 +215,102 @@ int decode(int length) {
        9, 10,  4,  5,
        6, 0,   1,  2
     ));
-    _mm_storeu_si128((__m128i *) dst, v5);
-    dst += 12;
+    _mm_storeu_si128((__m128i *) d, v5);
+    d += 12;
   }
   // postponed error handling: all lanes in error should be zero
   if (_mm_movemask_epi8(_mm_cmpeq_epi8(error, _mm_setzero_si128())) != 0xFFFF) {
     // there was an error somewhere in the data,
     // thus we redo decoding in scalar to find error position
     // this penalizes bad cases, good data can run at full speed
-    return _decode_tail(CHUNK, TARGET, length);
+    return _decode_tail(src, dst, srclen, src, dst);
   }
-  if ((unsigned char *) inp < CHUNK + length) {
-    return _decode_tail((unsigned char *) inp, dst, length - ((length >> 4) << 4));
+  if ((uint8_t *) inp < src + srclen) {
+    return _decode_tail((uint8_t *) inp, d, srclen - ((srclen >> 4) << 4), src, dst);
   }
-  return dst - TARGET;
+  return d - dst;
 
+}
 #else
-
-  unsigned char *dst = TARGET;
-  unsigned int *inp = (unsigned int *) CHUNK;
-  unsigned char temp[4];
-  unsigned char accu[4];
-  int l = length >> 2;
+ssize_t base64sixel_decode(const uint8_t *src, size_t srclen, const uint8_t *dst) {
+  uint8_t *d = (uint8_t *) dst;
+  uint32_t *inp = (uint32_t *) src;
+  uint8_t temp[4];
+  uint8_t accu[4];
+  int l = srclen >> 2;
   while (l--) {
-    if ((*((int *) temp) = *inp++ - 0x3F3F3F3F) & 0xC0C0C0C0) {
+    if ((*((uint32_t *) temp) = *inp++ - 0x3F3F3F3F) & 0xC0C0C0C0) {
       inp--;
       break;
     } else {
-      *((int *) accu) = temp[3] | temp[2]<<6 | temp[1]<<12 | temp[0]<<18;
-      *dst++ = accu[2];
-      *dst++ = accu[1];
-      *dst++ = accu[0];
+      *((uint32_t *) accu) = temp[3] | temp[2]<<6 | temp[1]<<12 | temp[0]<<18;
+      *d++ = accu[2];
+      *d++ = accu[1];
+      *d++ = accu[0];
     }
   }
   // error and tail handling
-  if ((unsigned char *) inp < CHUNK + length) {
+  if ((uint8_t *) inp < src + srclen) {
     *((int *) temp) = 0;
-    unsigned char *c = (unsigned char *) inp;
-    int end = CHUNK + length - c;
+    uint8_t *c = (uint8_t *) inp;
+    int end = src + srclen - c;
     int p = 0;
     for (;p < 4 && p < end; ++p) {
       if ((temp[p] = c[p] - 63) & 0xC0) {
         // error: non sixel char
-        return -(c+p+1 - CHUNK);
+        return -(c+p+1 - src);
       }
     }
     // tail
     if (p == 1) {
       // just one tail char is treated as error
       // (check what RFC says about it)
-      return ~length;
+      return ~srclen;
     }
-    *((int *) accu) = temp[2]<<6 | temp[1]<<12 | temp[0]<<18;
-    *dst++ = accu[2];
+    *((uint32_t *) accu) = temp[2]<<6 | temp[1]<<12 | temp[0]<<18;
+    *d++ = accu[2];
     if (p == 3) {
-      *dst++ = accu[1];
+      *d++ = accu[1];
     }
   }
-  return dst - TARGET;
-
+  return d - dst;
+}
 #endif
 
-}
-
-
-/**
- * @brief Transcode base64-standard to base64-sixel (scalar).
- *
- * Allows SP, CR, LF and '=' as padding character in input data.
- * SP, CR and LF are skipped, '=' returns early.
- *
- * Returns number of transcoded characters written to TARGET.
- * In case of an invalid input character the 2-complement of its
- * position in input data is returned as error code.
- *
- * @param length  Amount of characters loaded in CHUNK to be transcoded.
- * @return int    Amount of characters written to TARGET, or error code.
- */
-int transcode(int length) {
-  unsigned char *dst = TARGET;
-  unsigned char *c = CHUNK;
-  unsigned char *c_end8 = CHUNK + length - 8;
+ssize_t base64sixel_transcode(const uint8_t *src, size_t srclen, const uint8_t *dst) {
+  uint8_t *c = (uint8_t *) src;
+  uint8_t *c_end8 = c + srclen - 8;
+  uint8_t *d = (uint8_t *) dst;
   while (c < c_end8) {
     if (
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++]) ||
-      !(*dst++ = STAND2SIXEL[*c++])
+      !(*d++ = STAND2SIXEL[*c++]) ||
+      !(*d++ = STAND2SIXEL[*c++]) ||
+      !(*d++ = STAND2SIXEL[*c++]) ||
+      !(*d++ = STAND2SIXEL[*c++]) ||
+      !(*d++ = STAND2SIXEL[*c++]) ||
+      !(*d++ = STAND2SIXEL[*c++]) ||
+      !(*d++ = STAND2SIXEL[*c++]) ||
+      !(*d++ = STAND2SIXEL[*c++])
     ) {
-      dst--;
-      unsigned char v = *(c - 1);
+      d--;
+      uint8_t v = *(c - 1);
       // exit early on first padding char =
-      if (v == 61) return dst - TARGET;
+      if (v == 61) return d - dst;
       // skip SP, CR and LF, negative number as error indicator (~position in chunk)
-      if (!(v == 32 || v == 13 || v == 10)) return -(c - CHUNK);
+      if (!(v == 32 || v == 13 || v == 10)) return -(c - src);
     }
   }
   // handle tail
-  unsigned char *c_end = CHUNK + length;
+  uint8_t *c_end = (uint8_t *) src + srclen;
   while (c < c_end) {
-    if (!(*dst++ = STAND2SIXEL[*c++])) {
-      dst--;
-      unsigned char v = *(c - 1);
-      if (v == 61) return dst - TARGET;
-      if (!(v == 32 || v == 13 || v == 10)) return -(c - CHUNK);
+    if (!(*d++ = STAND2SIXEL[*c++])) {
+      d--;
+      uint8_t v = *(c - 1);
+      if (v == 61) return d - dst;
+      if (!(v == 32 || v == 13 || v == 10)) return -(c - src);
     }
   }
-  return dst - TARGET;
+  return d - dst;
 }
+
+// TODO: stream interface?

@@ -42,13 +42,13 @@ int main(int argc, char **argv) {
   int fd_in = 0;
   int fd_out = 1;
   int (*operate)(int) = &encode;
-  int read_limit = ENCODE_LIMIT;
+  ssize_t read_limit = ENCODE_LIMIT;
   int read_align = 12;
 
   int option;
   char *outfile = NULL;
 
-  size_t remaining_read = 0;
+  ssize_t remaining_read = 0;
   size_t global_read_pos = 0;
   int finished = 0;
 
@@ -176,7 +176,7 @@ int main(int argc, char **argv) {
     global_read_pos += handled_bytes;
 
     /* write */
-    size_t written = 0;
+    ssize_t written = 0;
     while (written < handled_bytes) {
       ssize_t written_bytes = write(fd_out, TARGET + written, handled_bytes - written);
       if (written_bytes < 0) {
